@@ -19,4 +19,4 @@ MPI Enabled, Distributed Rendering Demo App
 
 `mpiexec -np 4 ./bin/texturecube NA 512 512`
 
-![MPI GL Texture Cube with 4 ranks](https://tmarrinan.github.io/MPI-GLTextureCube/docs/MPI_GLTextureCube.png "MPI GL Texture Cube with 4 ranks")
+![MPI GL Texture Cube with 4 ranks](https://tmarrinan.github.io/MPI-GLTextureCube/docs/MPI_GLTextureCube.png "MPI GL Texture Cube with 4 ranks (total image size 512x512)")
