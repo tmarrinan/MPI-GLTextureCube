@@ -7,6 +7,7 @@
 #include <glm/mat4x4.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <pxstream/server.h>
 #include <mpi.h>
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -49,6 +50,7 @@ typedef struct AppData {
     double rotate_y;
     int frame_count;
     uint8_t *framebuffer;
+    PxStream::Server *stream;
 } AppData;
 
 static void Init(GLFWwindow *window, GShaderProgram *shader, AppData *app, LocalViewport& viewport);
@@ -80,12 +82,19 @@ int main(int argc, char **argv)
     AppData app;
     app.rank = rank;
     app.num_ranks = num_ranks;
-    app.render_mode = RenderMode::LocalDisplay;
+    app.render_mode = RenderMode::ImageCapture;
     int width = 1280;
     int height = 720;
-    if (argc >= 2 && std::string(argv[1]) == "imagecapture") app.render_mode = RenderMode::ImageCapture;
-    if (argc >= 3) width = atoi(argv[2]);
-    if (argc >= 4) height = atoi(argv[3]);
+    std::string iface = "lo";
+    uint16_t port_min = 8000;
+    uint16_t port_max = 8000 + num_ranks - 1;
+    if (argc >= 2) width = atoi(argv[1]);
+    if (argc >= 3) height = atoi(argv[2]);
+    if (argc >= 4) iface = std::string(argv[3]);
+    if (argc >= 5) port_min = atoi(argv[4]);
+    if (argc >= 6) port_max = atoi(argv[5]);
+    app.stream = new PxStream::Server(iface.c_str(), port_min, port_max, MPI_COMM_WORLD);
+    app.stream->SetImageFormat(PxStream::PixelFormat::RGBA, PxStream::PixelDataType::Uint8);
 
     // initialize GLFW
     if (!glfwInit())
@@ -103,6 +112,21 @@ int main(int argc, char **argv)
     m_viewport.height = height / rows;
     m_viewport.num_columns = cols;
     m_viewport.num_rows = rows;
+    int global_width = m_viewport.num_columns * m_viewport.width;
+    int global_height = m_viewport.num_rows * m_viewport.height;
+    app.stream->SetGlobalImageSize(global_width, global_height);
+    app.stream->SetLocalImageSize(m_viewport.width, m_viewport.height);
+    app.stream->SetLocalImageOffset(m_viewport.column * m_viewport.width, m_viewport.row * m_viewport.height);
+    MPI_Barrier(MPI_COMM_WORLD);
+    if (rank == 0)
+    {
+        char master_ip[16];
+        uint16_t master_port;
+        app.stream->GetMasterIpAddress(master_ip);
+        app.stream->GetMasterPort(&master_port);
+        printf("[GLTextureCube] Ready for client connections on %s:%u\n", master_ip, master_port);
+    }
+    app.stream->Listen(PxStream::Server::StreamBehavior::WaitForAll, 1);
 
     // create a window and its OpenGL context
     char title[32];
@@ -115,7 +139,7 @@ int main(int argc, char **argv)
 
     // make window's context current
     glfwMakeContextCurrent(window);
-    glfwSwapInterval(1);
+    glfwSwapInterval(0); // do not sync with local monitor
 
     // initialize GLAD OpenGL extension handling
     if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
@@ -138,6 +162,10 @@ int main(int argc, char **argv)
     // clean up
     glfwDestroyWindow(window);
     glfwTerminate();
+
+    app.stream->Finalize();
+
+    MPI_Finalize();
 
     return 0;
 }
@@ -250,10 +278,9 @@ void Render(GLFWwindow *window, GShaderProgram& shader, AppData& app, LocalViewp
 
     app.render_time = now;
 
-    if (app.render_mode == RenderMode::ImageCapture)
-    {
-        glReadPixels(0, 0, viewport.width, viewport.height, GL_RGBA, GL_UNSIGNED_BYTE, app.framebuffer);
-    }
+    glReadPixels(0, 0, viewport.width, viewport.height, GL_RGBA, GL_UNSIGNED_BYTE, app.framebuffer);
+    app.stream->SetFrameImage(app.framebuffer);
+    app.stream->Write();
 
     app.frame_count++;
     if (app.rank == 0 && app.frame_count % 60 == 0)
@@ -263,6 +290,8 @@ void Render(GLFWwindow *window, GShaderProgram& shader, AppData& app, LocalViewp
 
     MPI_Barrier(MPI_COMM_WORLD);
     glfwSwapBuffers(window);
+
+    app.stream->AdvanceToNextFrame();
 }
 
 void SetMatrixUniforms(GShaderProgram& shader, AppData& app)

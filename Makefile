@@ -1,15 +1,19 @@
 ############
 CXX= mpic++
-CXX_FLAGS= -std=c++11
+CXX_FLAGS= -std=c++11 -DASIO_STANDALONE
 
 MACHINE= $(shell uname -s)
 
+NETSOCKET_DIR= $(HOME)/local
+OPENSSL_DIR=/usr/local/opt/openssl
+PXSTREAM_DIR= $(HOME)/Dev/pxstream
+
 ifeq ($(MACHINE),Darwin)
-	INC= -I/usr/local/include -I${HOME}/local/include -I./include
-	LIB= -L/usr/local/lib -L${HOME}/local/lib -lglfw -lglad
+	INC= -I/usr/local/include -I$(HOME)/local/include -I$(NETSOCKET_DIR)/include -I$(OPENSSL_DIR)/include -I/$(PXSTREAM_DIR)/include -I./include
+	LIB= -L/usr/local/lib -L$(HOME)/local/lib -L$(NETSOCKET_DIR)/lib -L$(OPENSSL_DIR)/lib -L/$(PXSTREAM_DIR)/lib -lglfw -lglad -lnetsocket -lssl -lcrypto -lpthread -lpxstream
 else
-	INC= -I/usr/include -I./include
-	LIB= -L/usr/lib64 -lGL -lglfw -lglad
+	INC= -I/usr/include -I/$(HOME)/Dev/pxstream/include -I./include
+	LIB= -L/usr/lib64 -L$(NETSOCKET_DIR)/lib -L$(OPENSSL_DIR)/lib -L/$(PXSTREAM_DIR)/lib -lGL -lglfw -lglad -lnetsocket -lssl -lcrypto -lpthread -lpxstream
 endif
 
 SRCDIR= src
