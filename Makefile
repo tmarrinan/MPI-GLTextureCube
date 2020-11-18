@@ -6,17 +6,17 @@ MACHINE= $(shell uname -s)
 
 ifeq ($(MACHINE),Darwin)
 	INC= -I/usr/local/include -I${HOME}/local/include -I./include
-	LIB= -L/usr/local/lib -L${HOME}/local/lib -lglfw -lglad
+	LIB= -L/usr/local/lib -L${HOME}/local/lib -lIceTCore -lIceTMPI -lglfw -lglad
 else
 	INC= -I/usr/include -I./include
-	LIB= -L/usr/lib64 -lGL -lglfw -lglad
+	LIB= -L/usr/lib64 -lGL -lIceTCore -lIceTMPI -lglfw -lglad
 endif
 
 SRCDIR= src
 OBJDIR= obj
 BINDIR= bin
 
-OBJS= $(addprefix $(OBJDIR)/, main.o)
+OBJS= $(addprefix $(OBJDIR)/, main.o glslloader.o)
 EXEC= $(addprefix $(BINDIR)/, texturecube)
 
 mkdirs:= $(shell mkdir -p $(OBJDIR) $(BINDIR))
