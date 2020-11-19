@@ -152,13 +152,27 @@ void init()
 
     // Create projection and modelview matrices
     app.mat_projection = glm::perspective(M_PI / 4.0, (double)app.window_width / (double)app.window_height, 0.1, 100.0);
-    app.mat_modelview = glm::translate(glm::dmat4(1.0), glm::dvec3(0.0, 0.0, -5.0));
+    switch (app.rank) {
+        case 0:
+            app.mat_modelview = glm::translate(glm::dmat4(1.0), glm::dvec3(-1.5, -1.5, -8.0));
+            break;
+        case 1:
+            app.mat_modelview = glm::translate(glm::dmat4(1.0), glm::dvec3(0.0, -1.5, -11.0));
+            break;
+        case 2:
+            app.mat_modelview = glm::translate(glm::dmat4(1.0), glm::dvec3(-1.5, 1.5, -8.0));
+            break;
+        case 3:
+            app.mat_modelview = glm::translate(glm::dmat4(1.0), glm::dvec3(0.0, 1.5, -11.0));
+            break;
+    }
     //app.mat_projection = glm::dmat4(1.0);
     //app.mat_modelview = glm::dmat4(1.0);
 
     // Set OpenGL settings
     glClearColor(app.background_color[0], app.background_color[1], app.background_color[2], app.background_color[3]);
     glEnable(GL_DEPTH_TEST);
+    glViewport(0, 0, app.window_width, app.window_height);
 
     // Initialize vertex attributes
     app.vertex_position_attrib = 0;
@@ -177,7 +191,9 @@ void init()
     glBindTexture(GL_TEXTURE_2D, app.tex_id);
     int img_w, img_h, img_c;
     stbi_set_flip_vertically_on_load(true);
-    uint8_t *pixels = stbi_load("resrc/images/crate.jpg", &img_w, &img_h, &img_c, STBI_rgb_alpha);
+    char imgname[32];
+    snprintf(imgname, 32, "resrc/images/crate%d.jpg", app.rank);
+    uint8_t *pixels = stbi_load(imgname, &img_w, &img_h, &img_c, STBI_rgb_alpha);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -193,15 +209,19 @@ void init()
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, app.window_width, app.window_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
     glBindTexture(GL_TEXTURE_2D, 0);
 
-    glGenRenderbuffers(1, &(app.framebuffer_depth));
-    glBindRenderbuffer(GL_RENDERBUFFER, app.framebuffer_depth);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, app.window_width, app.window_height);
-    glBindRenderbuffer(GL_RENDERBUFFER, 0);
+    glGenTextures(1, &(app.framebuffer_depth));
+    glBindTexture(GL_TEXTURE_2D, app.framebuffer_depth);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_NONE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, app.window_width, app.window_height, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glBindTexture(GL_TEXTURE_2D, 0);
 
     glGenFramebuffers(1, &(app.framebuffer));
     glBindFramebuffer(GL_FRAMEBUFFER, app.framebuffer);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, app.framebuffer_texture, 0);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, app.framebuffer_depth);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, app.framebuffer_depth, 0);
     GLenum draw_buffers[1] = {GL_COLOR_ATTACHMENT0};
     glDrawBuffers(1, draw_buffers);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -233,15 +253,18 @@ void doFrame()
 void render(const IceTDouble *projection_matrix, const IceTDouble *modelview_matrix,
     const IceTFloat *background_color, const IceTInt *readback_viewport, IceTImage result)
 {
-    printf("rendering %d [%dx%d]\n", app.rank, icetImageGetWidth(result), icetImageGetHeight(result));
+    // Get render dimensions
+    int image_width = icetImageGetWidth(result);
+    int image_height = icetImageGetHeight(result);
+    printf("[rank %d] rendering %dx%d\n", app.rank, image_width, image_height);
 
-    //glBindFramebuffer(GL_FRAMEBUFFER, app.framebuffer);
+    // Render
+    glBindFramebuffer(GL_FRAMEBUFFER, app.framebuffer);
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     glUseProgram(app.program);
 
-    
     glm::dmat3 mat_normal = glm::inverse(app.mat_modelview);
     mat_normal = glm::transpose(mat_normal);
     float mat4_proj[16];
@@ -263,70 +286,27 @@ void render(const IceTDouble *projection_matrix, const IceTDouble *modelview_mat
     glBindTexture(GL_TEXTURE_2D, 0);
     glBindVertexArray(0);
 
+    glUseProgram(0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-
+    // Copy image to IceT buffer
     IceTUByte *pixels = icetImageGetColorub(result);
     IceTFloat *depth = icetImageGetDepthf(result);
-    uint8_t bg[] = {(uint8_t)(background_color[0] * 255.0f), (uint8_t)(background_color[1] * 255.0f),
-                    (uint8_t)(background_color[2] * 255.0f), (uint8_t)(background_color[3] * 255.0f)};
-    for (int i = 0; i < app.window_width * app.window_height; i++)
-    {
-        memcpy(pixels + (i * 4), bg, 4);
-        depth[i] = 1.0;
-    }
-    switch (app.rank) {
-        case 0:
-        {
-            uint8_t red[] {250, 10, 10, 255, 250, 10, 10, 255};
-            memcpy(pixels, red, 8);
-            memcpy(pixels + (app.window_width * 4), red, 8);
-            depth[0] = 0.0;
-            depth[1] = 0.0;
-            depth[app.window_width] = 0.0;
-            depth[app.window_width + 1] = 0.0;
-            break;
-        }
-        case 1:
-        {
-            uint8_t green[] {10, 200, 40, 255, 10, 200, 40, 255};
-            memcpy(pixels + (app.window_width * 2), green, 8);
-            memcpy(pixels + (app.window_width * 6), green, 8);
-            depth[app.window_width / 2] = 0.0;
-            depth[app.window_width / 2 + 1] = 0.0;
-            depth[app.window_width * 3 / 2] = 0.0;
-            depth[app.window_width * 3 / 2 + 1] = 0.0;
-            break;
-        }
-        case 2:
-        {
-            uint8_t blue[] {10, 40, 220, 255, 10, 40, 220, 255};
-            memcpy(pixels + (app.window_width * 16), blue, 8);
-            memcpy(pixels + (app.window_width * 20), blue, 8);
-            depth[app.window_width * 4] = 0.0;
-            depth[app.window_width * 4 + 1] = 0.0;
-            depth[app.window_width * 5] = 0.0;
-            depth[app.window_width * 5 + 1] = 0.0;
-            break;
-        }
-        case 3:
-        {
-            uint8_t black[] {10, 10, 10, 255, 10, 10, 10, 255};
-            memcpy(pixels + (app.window_width * 18), black, 8);
-            memcpy(pixels + (app.window_width * 22), black, 8);
-            depth[app.window_width * 9 / 2] = 0.0;
-            depth[app.window_width * 9 / 2 + 1] = 0.0;
-            depth[app.window_width * 11 / 2] = 0.0;
-            depth[app.window_width * 11 / 2 + 1] = 0.0;
-            break;
-        }
-    }
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glBindTexture(GL_TEXTURE_2D, app.framebuffer_texture);
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    glBindTexture(GL_TEXTURE_2D, app.framebuffer_depth);
+    glGetTexImage(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, GL_FLOAT, depth);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    //char outname[32];
+    //snprintf(outname, 32, "frame_%d.ppm", app.rank);
+    //writePpm(outname, image_width, image_height, pixels);
 }
 
 void display()
 {
-    /*
+    
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     if (app.rank == 0)
@@ -338,7 +318,7 @@ void display()
 
         writePpm("frame.ppm", app.window_width, app.window_height, pixels);
     }
-    */
+    
 
     // Synchronize and display
     MPI_Barrier(MPI_COMM_WORLD);
