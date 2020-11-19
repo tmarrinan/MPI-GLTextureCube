@@ -43,7 +43,8 @@ typedef struct AppData {
     GLuint framebuffer_depth;
     GLuint cube_vertex_array;
     GLuint plane_vertex_array;
-    GLuint tex_id;
+    GLuint box_texture;
+    GLuint composite_texture;
 } AppData;
 
 
@@ -194,8 +195,8 @@ void init()
     app.plane_vertex_array = planeVertexArray();
 
     // Load cube texture from JPEG file
-    glGenTextures(1, &(app.tex_id));
-    glBindTexture(GL_TEXTURE_2D, app.tex_id);
+    glGenTextures(1, &(app.box_texture));
+    glBindTexture(GL_TEXTURE_2D, app.box_texture);
     int img_w, img_h, img_c;
     stbi_set_flip_vertically_on_load(true);
     char imgname[32];
@@ -206,6 +207,16 @@ void init()
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img_w, img_h, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    // Create composite texture (for display of final image)
+    glGenTextures(1, &(app.composite_texture));
+    glBindTexture(GL_TEXTURE_2D, app.composite_texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, app.window_width, app.window_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, NULL);
     glBindTexture(GL_TEXTURE_2D, 0);
 
     // Create offscreen framebuffer
@@ -241,6 +252,12 @@ void init()
     glUniform3fv(app.phong.uniforms["uAmbientColor"], 1, glm::value_ptr(ambient));
     glUniform3fv(app.phong.uniforms["uDirectionalColor"], 1, glm::value_ptr(diffuse));
     glUniform3fv(app.phong.uniforms["uLightingDirection"], 1, glm::value_ptr(light_dir));
+    
+    glUseProgram(app.nolight.program);
+    glm::mat4 identity = glm::mat4(1.0);
+    glUniformMatrix4fv(app.nolight.uniforms["uProjectionMatrix"], 1, GL_FALSE, glm::value_ptr(identity));
+    glUniformMatrix4fv(app.nolight.uniforms["uModelViewMatrix"], 1, GL_FALSE, glm::value_ptr(identity));
+    
     glUseProgram(0);
 }
 
@@ -285,7 +302,7 @@ void render(const IceTDouble *projection_matrix, const IceTDouble *modelview_mat
     glUniformMatrix3fv(app.phong.uniforms["uNormalMatrix"], 1, GL_FALSE, mat3_norm);
 
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, app.tex_id);
+    glBindTexture(GL_TEXTURE_2D, app.box_texture);
     glUniform1i(app.phong.uniforms["uImage"], 0);
 
     glBindVertexArray(app.cube_vertex_array);
@@ -319,13 +336,19 @@ void display()
     if (app.rank == 0)
     {
         glUseProgram(app.nolight.program);
-
+   
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, app.composite_texture);
         IceTUByte *pixels = icetImageGetColorub(app.image);
-        // TODO:
-        //  1. upload pixels to texture  -  glTexSubImage2D()
-        //  2. draw fullscreen quad w/ texture  -  glDrawElements()
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, app.window_width, app.window_height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+        glUniform1i(app.nolight.uniforms["uImage"], 0);
 
-        writePpm("frame.ppm", app.window_width, app.window_height, pixels);
+        glBindVertexArray(app.plane_vertex_array);
+        glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, 0);
+        glBindTexture(GL_TEXTURE_2D, 0);
+        glBindVertexArray(0);
+
+        //writePpm("frame.ppm", app.window_width, app.window_height, pixels);
 
         glUseProgram(0);
     }
