@@ -16,6 +16,11 @@
 
 #define WINDOW_TITLE "Texture Cube (IceT)"
 
+typedef struct GlslProgram {
+    GLuint program;
+    std::map<std::string,GLint> uniforms;
+} GlslProgram;
+
 typedef struct AppData {
     int window_width;
     int window_height;
@@ -28,8 +33,8 @@ typedef struct AppData {
     glm::vec4 background_color;
     glm::dmat4 mat_projection;
     glm::dmat4 mat_modelview;
-    GLuint program;
-    std::map<std::string,GLint> uniforms;
+    GlslProgram phong;
+    GlslProgram nolight;
     GLuint vertex_position_attrib;
     GLuint vertex_normal_attrib;
     GLuint vertex_texcoord_attrib;
@@ -49,7 +54,8 @@ void render(const IceTDouble *projection_matrix, const IceTDouble *modelview_mat
 void display();
 void mat4ToFloatArray(glm::dmat4 mat4, float array[16]);
 void mat3ToFloatArray(glm::dmat3 mat3, float array[9]);
-void loadShader(std::string shader_filename_base);
+void loadPhongShader(std::string shader_filename_base);
+void loadNoLightShader(std::string shader_filename_base);
 GLuint cubeVertexArray();
 GLuint planeVertexArray();
 void writePpm(const char *filename, int width, int height, const uint8_t *pixels);
@@ -179,8 +185,9 @@ void init()
     app.vertex_normal_attrib = 1;
     app.vertex_texcoord_attrib = 2;
 
-    // Load shader program
-    loadShader("resrc/shaders/texture_phong");
+    // Load shader programs
+    loadPhongShader("resrc/shaders/texture_phong");
+    loadNoLightShader("resrc/shaders/texture_nolight");
 
     // Create vertex array objects
     app.cube_vertex_array = cubeVertexArray();
@@ -227,13 +234,13 @@ void init()
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     // Upload static uniforms
-    glUseProgram(app.program);
+    glUseProgram(app.phong.program);
     glm::vec3 ambient = glm::vec3(0.2, 0.2, 0.2);
     glm::vec3 diffuse = glm::vec3(1.0, 1.0, 1.0);
     glm::vec3 light_dir = glm::normalize(glm::vec3(0.2, 1.0, 1.0));
-    glUniform3fv(app.uniforms["uAmbientColor"], 1, glm::value_ptr(ambient));
-    glUniform3fv(app.uniforms["uDirectionalColor"], 1, glm::value_ptr(diffuse));
-    glUniform3fv(app.uniforms["uLightingDirection"], 1, glm::value_ptr(light_dir));
+    glUniform3fv(app.phong.uniforms["uAmbientColor"], 1, glm::value_ptr(ambient));
+    glUniform3fv(app.phong.uniforms["uDirectionalColor"], 1, glm::value_ptr(diffuse));
+    glUniform3fv(app.phong.uniforms["uLightingDirection"], 1, glm::value_ptr(light_dir));
     glUseProgram(0);
 }
 
@@ -263,7 +270,7 @@ void render(const IceTDouble *projection_matrix, const IceTDouble *modelview_mat
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    glUseProgram(app.program);
+    glUseProgram(app.phong.program);
 
     glm::dmat3 mat_normal = glm::inverse(app.mat_modelview);
     mat_normal = glm::transpose(mat_normal);
@@ -273,13 +280,13 @@ void render(const IceTDouble *projection_matrix, const IceTDouble *modelview_mat
     mat4ToFloatArray(app.mat_projection, mat4_proj);
     mat4ToFloatArray(app.mat_modelview, mat4_mv);
     mat3ToFloatArray(mat_normal, mat3_norm);
-    glUniformMatrix4fv(app.uniforms["uProjectionMatrix"], 1, GL_FALSE, mat4_proj);
-    glUniformMatrix4fv(app.uniforms["uModelViewMatrix"], 1, GL_FALSE, mat4_mv);
-    glUniformMatrix3fv(app.uniforms["uNormalMatrix"], 1, GL_FALSE, mat3_norm);
+    glUniformMatrix4fv(app.phong.uniforms["uProjectionMatrix"], 1, GL_FALSE, mat4_proj);
+    glUniformMatrix4fv(app.phong.uniforms["uModelViewMatrix"], 1, GL_FALSE, mat4_mv);
+    glUniformMatrix3fv(app.phong.uniforms["uNormalMatrix"], 1, GL_FALSE, mat3_norm);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, app.tex_id);
-    glUniform1i(app.uniforms["uImage"], 0);
+    glUniform1i(app.phong.uniforms["uImage"], 0);
 
     glBindVertexArray(app.cube_vertex_array);
     glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_SHORT, 0);
@@ -311,15 +318,18 @@ void display()
 
     if (app.rank == 0)
     {
+        glUseProgram(app.nolight.program);
+
         IceTUByte *pixels = icetImageGetColorub(app.image);
         // TODO:
         //  1. upload pixels to texture  -  glTexSubImage2D()
         //  2. draw fullscreen quad w/ texture  -  glDrawElements()
 
         writePpm("frame.ppm", app.window_width, app.window_height, pixels);
+
+        glUseProgram(0);
     }
     
-
     // Synchronize and display
     MPI_Barrier(MPI_COMM_WORLD);
     glfwSwapBuffers(app.window);
@@ -358,24 +368,43 @@ void mat3ToFloatArray(glm::dmat3 mat3, float array[9])
     array[8] = mat3[2][2];
 }
 
-void loadShader(std::string shader_filename_base)
+void loadPhongShader(std::string shader_filename_base)
 {
     // Create shader program
     std::string vert_filename = shader_filename_base + ".vert";
     std::string frag_filename = shader_filename_base + ".frag";
-    app.program = glsl::createShaderProgram(vert_filename.c_str(), frag_filename.c_str());
+    app.phong.program = glsl::createShaderProgram(vert_filename.c_str(), frag_filename.c_str());
 
     // Specify input and output attributes for the GPU program
-    glBindAttribLocation(app.program, app.vertex_position_attrib, "aVertexPosition");
-    glBindAttribLocation(app.program, app.vertex_normal_attrib, "aVertexNormal");
-    glBindAttribLocation(app.program, app.vertex_texcoord_attrib, "aVertexTexCoord");
-    glBindFragDataLocation(app.program, 0, "FragColor");
+    glBindAttribLocation(app.phong.program, app.vertex_position_attrib, "aVertexPosition");
+    glBindAttribLocation(app.phong.program, app.vertex_normal_attrib, "aVertexNormal");
+    glBindAttribLocation(app.phong.program, app.vertex_texcoord_attrib, "aVertexTexCoord");
+    glBindFragDataLocation(app.phong.program, 0, "FragColor");
 
     // Link compiled GPU program
-    glsl::linkShaderProgram(app.program);
+    glsl::linkShaderProgram(app.phong.program);
 
     // Get handles to uniform variables defined in the shaders
-    glsl::getShaderProgramUniforms(app.program, app.uniforms);
+    glsl::getShaderProgramUniforms(app.phong.program, app.phong.uniforms);
+}
+
+void loadNoLightShader(std::string shader_filename_base)
+{
+    // Create shader program
+    std::string vert_filename = shader_filename_base + ".vert";
+    std::string frag_filename = shader_filename_base + ".frag";
+    app.nolight.program = glsl::createShaderProgram(vert_filename.c_str(), frag_filename.c_str());
+
+    // Specify input and output attributes for the GPU program
+    glBindAttribLocation(app.nolight.program, app.vertex_position_attrib, "aVertexPosition");
+    glBindAttribLocation(app.nolight.program, app.vertex_texcoord_attrib, "aVertexTexCoord");
+    glBindFragDataLocation(app.nolight.program, 0, "FragColor");
+
+    // Link compiled GPU program
+    glsl::linkShaderProgram(app.nolight.program);
+
+    // Get handles to uniform variables defined in the shaders
+    glsl::getShaderProgramUniforms(app.nolight.program, app.nolight.uniforms);
 }
 
 GLuint cubeVertexArray()
