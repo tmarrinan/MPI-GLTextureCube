@@ -33,6 +33,10 @@ typedef struct AppData {
     glm::vec4 background_color;
     glm::dmat4 mat_projection;
     glm::dmat4 mat_modelview;
+    double rotate_x;
+    double rotate_y;
+    double render_time;
+    glm::dvec3 box_position;
     GlslProgram phong;
     GlslProgram nolight;
     GLuint vertex_position_attrib;
@@ -121,7 +125,7 @@ int main(int argc, char **argv)
     while (!glfwWindowShouldClose(app.window))
     {
         glfwPollEvents();
-        //Idle(window, shader, app, m_viewport);
+        doFrame();
     }
 
     // clean up
@@ -161,20 +165,29 @@ void init()
     app.mat_projection = glm::perspective(M_PI / 4.0, (double)app.window_width / (double)app.window_height, 0.1, 100.0);
     switch (app.rank) {
         case 0:
-            app.mat_modelview = glm::translate(glm::dmat4(1.0), glm::dvec3(-1.5, -1.5, -8.0));
+            app.box_position = glm::dvec3(-1.5, -1.5, -8.0);
             break;
         case 1:
-            app.mat_modelview = glm::translate(glm::dmat4(1.0), glm::dvec3(0.0, -1.5, -11.0));
+            app.box_position = glm::dvec3(0.0, -1.5, -11.0);
             break;
         case 2:
-            app.mat_modelview = glm::translate(glm::dmat4(1.0), glm::dvec3(-1.5, 1.5, -8.0));
+            app.box_position = glm::dvec3(-1.5, 1.5, -8.0);
             break;
         case 3:
-            app.mat_modelview = glm::translate(glm::dmat4(1.0), glm::dvec3(0.0, 1.5, -11.0));
+            app.box_position = glm::dvec3(0.0, 1.5, -11.0);
             break;
     }
     //app.mat_projection = glm::dmat4(1.0);
     //app.mat_modelview = glm::dmat4(1.0);
+
+    // Initialize box rotations and animation time
+    app.rotate_x =  30.0;
+    app.rotate_y = -45.0;
+    if (app.rank == 0)
+    {
+        app.render_time = MPI_Wtime();
+    }
+    MPI_Bcast(&(app.render_time), 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
     // Set OpenGL settings
     glClearColor(app.background_color[0], app.background_color[1], app.background_color[2], app.background_color[3]);
@@ -263,7 +276,23 @@ void init()
 
 void doFrame()
 {
-    // Animation here
+    // Animation
+    double now;
+    if (app.rank == 0)
+    {
+        now = MPI_Wtime();
+    }
+    MPI_Bcast(&now, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+
+    double dt = now - app.render_time;
+    app.rotate_x += 10.0 * dt;
+    app.rotate_y -= 15.0 * dt;
+
+    app.mat_modelview = glm::translate(glm::dmat4(1.0), app.box_position);
+    app.mat_modelview = glm::rotate(app.mat_modelview, glm::radians(app.rotate_x), glm::dvec3(1.0, 0.0, 0.0));
+    app.mat_modelview = glm::rotate(app.mat_modelview, glm::radians(app.rotate_y), glm::dvec3(0.0, 1.0, 0.0));
+
+    app.render_time = now;
 
     // Offscreen render and composit
     app.image = icetDrawFrame(glm::value_ptr(app.mat_projection),
@@ -280,7 +309,7 @@ void render(const IceTDouble *projection_matrix, const IceTDouble *modelview_mat
     // Get render dimensions
     int image_width = icetImageGetWidth(result);
     int image_height = icetImageGetHeight(result);
-    printf("[rank %d] rendering %dx%d\n", app.rank, image_width, image_height);
+    //printf("[rank %d] rendering %dx%d\n", app.rank, image_width, image_height);
 
     // Render
     glBindFramebuffer(GL_FRAMEBUFFER, app.framebuffer);
