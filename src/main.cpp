@@ -108,7 +108,7 @@ int main(int argc, char **argv)
     }
     else
     {
-        app.window = glfwCreateWindow(256, 64, title, NULL, NULL);
+        app.window = glfwCreateWindow(320, 180, title, NULL, NULL);
     }
 
     // Make window's context current
@@ -125,12 +125,18 @@ int main(int argc, char **argv)
     init();
 
     // main render loop
-    // TODO: add check to see if any window has closed
-    //       if so, close all
     doFrame();
-    while (!glfwWindowShouldClose(app.window))
+    uint16_t should_close = 0;
+    while (!should_close)
     {
+        // poll for user events
         glfwPollEvents();
+
+        // check if any window has been closed
+        uint16_t close_this = glfwWindowShouldClose(app.window);
+        MPI_Allreduce(&close_this, &should_close, 1, MPI_UINT16_T, MPI_SUM, MPI_COMM_WORLD);
+
+        // render next frame
         doFrame();
     }
 
