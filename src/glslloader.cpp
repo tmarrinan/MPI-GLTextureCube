@@ -93,7 +93,7 @@ GLint glsl::compileShader(char *source, int32_t length, GLenum type)
     return shader;
 }
 
-GLuint glsl::attachShaders(GLuint shaders[], uint num_shaders)
+GLuint glsl::attachShaders(GLuint shaders[], uint16_t num_shaders)
 {
     // Create a GPU program
     GLuint program = glCreateProgram();

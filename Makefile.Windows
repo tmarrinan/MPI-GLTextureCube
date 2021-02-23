@@ -1,0 +1,35 @@
+############
+CXX= g++
+CXX_FLAGS= -std=c++11
+
+# remove trailing backslash from MPI directories
+MPI_INC= $(patsubst %\,%,$(MSMPI_INC))
+MPI_LIB= $(patsubst %\,%,$(MSMPI_LIB64))
+
+INC= -I"$(MPI_INC)" -I"$(MPI_INC)\x64" -I"$(HOMEPATH)\local\include" -I.\include
+LIB= -L"$(MPI_LIB)" -L"$(HOMEPATH)\local\lib" -lmsmpi -lIceTCore -lIceTMPI -lglfw3dll -lglad
+
+SRCDIR= src
+OBJDIR= obj
+BINDIR= bin
+
+OBJS= $(addprefix $(OBJDIR)\, main.o glslloader.o)
+EXEC= $(addprefix $(BINDIR)\, texturecube.exe)
+
+mkobjdir:= $(shell if not exist $(OBJDIR) mkdir $(OBJDIR))
+mkbindir:= $(shell if not exist $(BINDIR) mkdir $(BINDIR))
+
+
+# BUILD EVERYTHING
+all: $(EXEC)
+
+$(EXEC): $(OBJS)
+	$(CXX) -o $@ $^ $(LIB)
+
+$(OBJDIR)\\%.o: $(SRCDIR)\%.cpp
+	$(CXX) $(CXX_FLAGS) -c -o $@ $< $(INC)
+
+
+# REMOVE OLD FILES
+clean:
+	del $(OBJS) $(EXEC)

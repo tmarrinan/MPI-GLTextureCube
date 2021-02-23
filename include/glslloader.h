@@ -11,7 +11,7 @@ namespace glsl {
     void getShaderProgramUniforms(GLuint program, std::map<std::string,GLint>& uniforms);
 
     static GLint compileShader(char *source, int32_t length, GLenum type);
-    static GLuint attachShaders(GLuint shaders[], uint num_shaders);
+    static GLuint attachShaders(GLuint shaders[], uint16_t num_shaders);
     static std::string shaderTypeToString(GLenum type);
     static int32_t readFile(const char* filename, char** data_ptr);
 }

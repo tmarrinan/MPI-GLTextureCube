@@ -14,6 +14,10 @@
 #include "stb_image.h"
 #include "glslloader.h"
 
+#ifndef M_PI
+#define M_PI (3.14159265358979323846)
+#endif
+
 #define WINDOW_TITLE "Texture Cube (IceT)"
 
 typedef struct GlslProgram {
@@ -121,6 +125,8 @@ int main(int argc, char **argv)
     init();
 
     // main render loop
+    // TODO: add check to see if any window has closed
+    //       if so, close all
     doFrame();
     while (!glfwWindowShouldClose(app.window))
     {
@@ -133,6 +139,8 @@ int main(int argc, char **argv)
     icetDestroyContext(app.context);
     glfwDestroyWindow(app.window);
     glfwTerminate();
+    
+    MPI_Finalize();
 
     return 0;
 }
